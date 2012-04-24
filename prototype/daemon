@@ -3,9 +3,13 @@
 from gi.repository import GLib
 import sys, os, socket
 
+import volume
+
 SOCKET_PATH = '/tmp/mvold'
 
 NETLINK_KOBJECT_EVENT = getattr(socket, 'NETLINK_KOBJECT_EVENT', 15)
+
+IGNORE_BLOCK_DEVICES_PREFIX = ('loop', 'ram')
 
 class Daemon:
 	def __init__(self):
@@ -22,6 +26,9 @@ class Daemon:
 		self.nl.bind((socket.AF_NETLINK, 1))
 		GLib.io_add_watch(self.nl, GLib.IOCondition.IN, self.handle_uevent)
 		GLib.io_add_watch(self.s, GLib.IOCondition.IN, self.handle_socket)
+
+		self.disks = {}
+		self.volumes = {}
 
 	def handle_uevent(self, nl, cond, *args):
 		buf = nl.recv(4086).split('\0')
@@ -45,11 +52,43 @@ class Daemon:
 			pass
 	
 	def handle_disk(self, event):
-		pass
+		action = event['ACTION']
+		if action == 'add':
+			self.add_disk(event)
+		elif action == 'remove':
+			self.remove_disk(event)
+		else:
+			pass
+	
+	def add_disk(self, event):
+		d = volume.Disk(event)
+		self.disks[event['DEVNAME']] = d
+	
+	def remove_disk(self, event):
+		dev = event['DEVNAME']
+		if dev in self.disks:
+			disk = self.disks.pop(dev)
+			disk.destroy()
 
 	def handle_partition(self, event):
-		pass
-	
+		action = event['ACTION']
+		if action == 'add':
+			self.add_partition(event)
+		elif action == 'remove':
+			self.remove_partition(event)
+		else:
+			pass
+
+	def add_partition(self, event):
+		v = volume.Volume(event)
+		self.volumes[event['DEVNAME']] = v
+
+	def remove_partition(self, event):
+		dev = event['DEVNAME']
+		if dev in self.volumes:
+			volume = self.volumes.pop(dev)
+			volume.destroy()
+
 	def handle_socket(self, sock, cond, *args):
 		c = sock.accept()
 		cmd = c.recv(4096)
@@ -59,6 +98,9 @@ class Daemon:
 
 	def handle_cmd(self, cmd):
 		return ''
+	
+	def run_coldplug(self):
+		BLOCK_SYSFS = '/sys/block/'
 
 if __name__ == '__main__':
 	if os.getuid() != 0:
@@ -67,6 +109,8 @@ if __name__ == '__main__':
 		cmd = [sudo, sys.executable] + sys.argv
 		os.execvp(sudo, cmd)
 	
+	os.makedirs('/dev/block/mvold/')
 	d = Daemon()
+	d.run_coldplug()
 	
 	GLib.MainLoop().run()

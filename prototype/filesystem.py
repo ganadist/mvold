@@ -1,5 +1,6 @@
 import os
 
+MS_DEFAULT = 0
 # from sys/mount.h
 MS_RDONLY = 1
 MS_NOSUID = 2
@@ -9,17 +10,37 @@ MS_REMOUNT = 32
 MS_NOATIME = 1024
 MS_BIND    = 4096
 
+FlagDict = {
+	MS_RDONLY	:'ro',
+	MS_NOSUID	:'nosuid',
+	MS_NODEV	:'nodev',
+	MS_NOEXEC	:'noexec',
+	MS_REMOUNT	:'remount',
+	MS_NOATIME	:'noatime',
+	MS_BIND		:'bind',
+	MS_DEFAULT	:'default'
+}
+
+#for k, v in FlagDict.iteritems():
+#	FlagDict[v] = k
+
 class Interface:
 	fstype = ''
 	mount_cmd = 'mount'
 	fsck_cmd = 'fsck'
+	mkfs_cmd = ''
 
 	@classmethod
 	def __build_mount_command(cls, device, mntpnt, flags, options):
+		flag_string = []
+		for flag in FlagDict:
+			if (flag & flags):
+				flag_string.append(FlagDict[flag])
+
 		return '%(mount)s -t %(fstype)s -o %(options)s %(device)s %(mntpnt)s'%{
 				'mount': cls.mount_cmd,
 				'fstype': cls.fstype,
-				'options': options,
+				'options': ','.join(flag_string) + ',' + options,
 				'device': device,
 				'mntpnt': mntpnt,
 		}
@@ -38,7 +59,7 @@ class Interface:
 		raise NotImplemented
 
 	@staticmethod
-	def rename(name):
+	def setLabel(device, name):
 		raise NotImplemented
 
 	@staticmethod
@@ -80,7 +101,7 @@ class Fat(Interface):
 		pass
 
 	@staticmethod
-	def rename(name):
+	def setLabel(device, name):
 		raise NotImplemented
 
 class Isofs(Interface):
@@ -113,4 +134,4 @@ class Ntfs(Interface):
 
 if __name__ == '__main__':
 	Fat.check('/dev/sda')
-	Fat.mount('/dev/sda', '/media/sda', 0, 'default')
+	Fat.mount('/dev/sda', '/media/sda', MS_BIND | MS_RDONLY, 'default')
